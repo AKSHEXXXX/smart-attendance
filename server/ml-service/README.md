@@ -7,8 +7,10 @@ Machine Learning microservice for face recognition operations in the Smart Atten
 - **Face Encoding**: Extract 128-dimensional face embeddings from images
 - **Face Detection**: Detect multiple faces in classroom photos
 - **Face Matching**: Match detected faces against student database
+- **Liveness Detection**: Anti-spoofing using passive analysis (Blur, Color Histograms)
 - **Batch Operations**: Process multiple faces efficiently
 - **Stateless Design**: No database dependencies, pure ML operations
+
 - **Scalable**: Can be deployed independently and scaled horizontally
 
 ## Tech Stack
@@ -67,7 +69,8 @@ Detect multiple faces in an image.
     {
       "embedding": [128 floats],
       "location": {"top": 100, "right": 300, "bottom": 400, "left": 150},
-      "face_area_ratio": 0.15
+      "face_area_ratio": 0.15,
+      "is_live": true 
     }
   ],
   "count": 1,
@@ -77,6 +80,21 @@ Detect multiple faces in an image.
   }
 }
 ```
+
+## Anti-Spoofing Strategy
+
+We employ a passive liveness detection mechanism to prevent presentation attacks (e.g., holding up a photo or screen).
+
+**Current Implementation:**
+1.  **Blur Check**: Uses Laplacian variance to detect unnatural blur often found in re-captured images.
+2.  **Color Diversity**: Analyzes HSV color distribution to flag images with limited gamuts (typical of screens/prints) or extreme saturation.
+
+**Configuration:**
+- Enable/Disable via `ML_LIVENESS_CHECK=true/false` (Default: `true`).
+
+### Future Enhancements
+- Integration of a lightweight pre-trained CNN (e.g., MiniVGG) or Depth Map Estimator for robust spoof detection.
+
 
 ### POST /api/ml/batch-match
 Match multiple faces against candidate embeddings.

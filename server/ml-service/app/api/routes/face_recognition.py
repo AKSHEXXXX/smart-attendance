@@ -36,10 +36,13 @@ from app.utils.image_validation import validate_and_decode_image
 from app.ml.face_detector import detect_faces
 from app.ml.face_encoder import get_face_embedding
 from app.ml.face_matcher import cosine_similarity
+from app.ml.liveness import is_live
+from app.core.config import Settings
 
 router = APIRouter(
     prefix="/api/ml", tags=["ML"], dependencies=[Depends(verify_api_key)]
 )
+settings = Settings()
 
 
 @router.post("/encode-face", response_model=EncodeFaceResponse)
@@ -144,6 +147,12 @@ async def detect_faces_api(request: DetectFacesRequest):
                 continue
 
             face_img = image_np[top:bottom, left:right]
+            
+            # Liveness Check
+            live = True
+            if settings.ML_LIVENESS_CHECK:
+                 live = is_live(face_img)
+
             embedding = get_face_embedding(face_img)
 
             detected.append(
@@ -153,6 +162,7 @@ async def detect_faces_api(request: DetectFacesRequest):
                         top=top, right=right, bottom=bottom, left=left
                     ),
                     face_area_ratio=face_area / image_area,
+                    is_live=live
                 )
             )
 

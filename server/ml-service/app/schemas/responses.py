@@ -35,6 +35,8 @@ class DetectedFaceInfo(BaseModel):
     embedding: List[float]
     location: FaceLocation
     face_area_ratio: float
+    is_live: bool = True
+
 
 
 class DetectFacesMetadata(BaseModel):
