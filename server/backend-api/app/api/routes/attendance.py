@@ -8,7 +8,7 @@ from bson import errors as bson_errors
 from fastapi import APIRouter, HTTPException, Request
 
 from geopy.distance import geodesic
-from app.core.config import ML_CONFIDENT_THRESHOLD, ML_UNCERTAIN_THRESHOLD
+from app.core.config import ML_CONFIDENT_THRESHOLD, ML_UNCERTAIN_THRESHOLD, RATE_LIMIT_ATTENDANCE_MARK
 from app.db.mongo import db
 from app.services.attendance_daily import save_daily_summary
 from app.services.attendance import log_grouped_attendance
@@ -99,6 +99,7 @@ def _parse_object_id_list(
 
 
 @router.post("/mark-qr")
+@limiter.limit(RATE_LIMIT_ATTENDANCE_MARK)
 async def mark_attendance_qr(
     payload: QRAttendanceRequest, 
     request: Request,
@@ -349,7 +350,7 @@ async def mark_attendance_qr(
 
 
 @router.post("/mark")
-@limiter.limit("30/minute")
+@limiter.limit(RATE_LIMIT_ATTENDANCE_MARK)
 async def mark_attendance(request: Request, payload: Dict):
     """
     Mark attendance by detecting faces in classroom image

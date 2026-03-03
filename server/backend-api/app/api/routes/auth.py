@@ -39,7 +39,7 @@ from ...core.security import hash_password, verify_password
 
 # from ...core.email import send_verification_email
 from ...core.email import BrevoEmailService
-from ...core.config import BACKEND_BASE_URL
+from ...core.config import BACKEND_BASE_URL, RATE_LIMIT_REGISTER, RATE_LIMIT_LOGIN
 from ...db.mongo import db
 from ...core.limiter import limiter
 import logging
@@ -57,7 +57,7 @@ oauth = OAuth()
 
 
 @router.post("/register", response_model=RegisterResponse)
-@limiter.limit("5/minute")
+@limiter.limit(RATE_LIMIT_REGISTER)
 async def register(
     request: Request, payload: RegisterRequest, background_tasks: BackgroundTasks
 ):
@@ -184,7 +184,7 @@ async def register(
 
 
 @router.post("/login", response_model=UserResponse)
-@limiter.limit("10/minute")
+@limiter.limit(RATE_LIMIT_LOGIN)
 async def login(request: Request, payload: LoginRequest):
     logger.info(f"Login request received for email: {payload.email}")
     email = payload.email

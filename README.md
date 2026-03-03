@@ -1096,8 +1096,7 @@ json
 
 The ML Service (`/api/ml/*` endpoints) requires API key authentication via the `X-API-Key` header.
 
-```
-http
+```http
 GET /api/ml/encode-face
 X-API-Key: your-ml-service-api-key
 ```
@@ -1110,8 +1109,7 @@ json
 }
 ```
 or
-```
-json
+```json
 {
   "detail": "Invalid API key"
 }
