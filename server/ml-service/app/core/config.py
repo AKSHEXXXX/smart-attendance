@@ -1,22 +1,7 @@
 import json
-import os
 from pydantic_settings import BaseSettings
+from pydantic import model_validator
 from typing import List, Union
-
-
-def _get_ml_api_key() -> str:
-    """
-    Get ML_API_KEY with fallback to legacy API_KEY environment variable.
-    Raises an error if no valid API key is found.
-    """
-    # Try ML_API_KEY first, then fall back to legacy API_KEY
-    api_key = os.environ.get("ML_API_KEY") or os.environ.get("API_KEY")
-    if not api_key:
-        raise ValueError(
-            "ML_API_KEY environment variable is required. "
-            "Set ML_API_KEY (or legacy API_KEY) to configure the ML service API key."
-        )
-    return api_key
 
 
 class Settings(BaseSettings):
@@ -41,19 +26,29 @@ class Settings(BaseSettings):
 
     LOG_LEVEL: str = "info"
 
+    # API Key fields - will be validated by model_validator
+    ML_API_KEY: str = ""
+    API_KEY: str | None = None
+
     class Config:
         env_file = ".env"
         case_sensitive = True
 
-    @property
-    def ML_API_KEY(self) -> str:
-        """Get ML API key with fallback to legacy API_KEY"""
-        return _get_ml_api_key()
-
-    @property
-    def API_KEY(self) -> str:
-        """Backward compatibility property"""
-        return self.ML_API_KEY
+    @model_validator(mode="after")
+    def validate_api_keys(self) -> "Settings":
+        """
+        Validate API keys with legacy fallback logic.
+        Prefers ML_API_KEY then API_KEY, raises ValueError if neither is set.
+        """
+        api_key = self.ML_API_KEY or self.API_KEY
+        if not api_key:
+            raise ValueError(
+                "ML_API_KEY environment variable is required. "
+                "Set ML_API_KEY (or legacy API_KEY) to configure the ML service API key."
+            )
+        # Ensure ML_API_KEY is set for consistent access
+        self.ML_API_KEY = api_key
+        return self
 
     @property
     def cors_origins_list(self) -> List[str]:

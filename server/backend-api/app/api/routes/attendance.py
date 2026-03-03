@@ -121,6 +121,9 @@ async def mark_attendance_qr(
     if current_user["role"] != "student":
         raise HTTPException(status_code=403, detail="Only students can mark attendance")
 
+    # Set user_id in request.state for rate limiting
+    request.state.user_id = current_user.get("id")
+
     # Fetch full user document for biometrics
     try:
         user_id = ObjectId(current_user["id"])
@@ -383,6 +386,9 @@ async def mark_attendance(request: Request, payload: Dict):
         user_role = decoded.get("role")
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+    # Set user_id in request.state for rate limiting
+    request.state.user_id = user_id
 
     # Check device binding - ONLY for students
     # Teachers and admins are exempt from device binding

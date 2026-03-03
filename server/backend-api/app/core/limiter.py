@@ -12,6 +12,9 @@ def _get_rate_limit_key_func():
     """
     Get the appropriate key function for rate limiting.
     
+    For authenticated attendance endpoints, prefers user_id over IP to avoid
+    shared rate limit buckets. Falls back to client IP for unauthenticated requests.
+    
     Uses X-Forwarded-For header only if the immediate peer is a trusted proxy,
     otherwise falls back to remote address to prevent IP spoofing.
     """
@@ -20,7 +23,8 @@ def _get_rate_limit_key_func():
     if TRUSTED_PROXIES:
         trusted_proxies = {p.strip() for p in TRUSTED_PROXIES.split(",") if p.strip()}
 
-    def key_func(request):
+    def _get_client_ip(request):
+        """Get client IP address, respecting trusted proxies."""
         # Get the immediate peer address (the direct client/proxy connecting to us)
         client_host = request.client.host if request.client else None
         
@@ -33,6 +37,37 @@ def _get_rate_limit_key_func():
         
         # Otherwise, use the direct remote address
         return get_remote_address(request)
+
+    def key_func(request):
+        """
+        Rate limit key function that prefers user_id for authenticated requests.
+        
+        Checks for user_id in:
+        1. request.state.user_id - set by get_current_user dependency
+        2. Authorization header - decode JWT to extract user_id for manual auth
+        
+        Falls back to client IP for unauthenticated requests.
+        """
+        # Priority 1: Check if user_id is already set in request.state (by get_current_user)
+        if hasattr(request.state, "user_id") and request.state.user_id:
+            return f"user_id:{request.state.user_id}"
+        
+        # Priority 2: Try to extract user_id from Authorization header (for manual JWT decoding)
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            try:
+                from app.utils.jwt_token import decode_jwt
+                token = auth_header.split(" ")[1]
+                decoded = decode_jwt(token)
+                user_id = decoded.get("user_id")
+                if user_id:
+                    return f"user_id:{user_id}"
+            except Exception:
+                # If JWT decode fails, fall through to IP-based limiting
+                pass
+        
+        # Priority 3: Fall back to client IP address
+        return _get_client_ip(request)
     
     return key_func
 
