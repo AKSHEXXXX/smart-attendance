@@ -58,7 +58,7 @@ def override_dependency():
     yield
     app.dependency_overrides = {}
 
-def test_liveness_check_pass_high_quality(mock_face_mesh, mock_detector, mock_encoder):
+def test_liveness_high_quality_acceptance(mock_face_mesh, mock_detector, mock_encoder):
     """
     Scenario: High quality image (High Variance)
     Result: is_live=True (assuming mesh detected)
@@ -100,7 +100,7 @@ def test_liveness_check_fail_blur(mock_face_mesh, mock_detector, mock_encoder):
         data = response.json()
         assert data["faces"][0]["is_live"] is False
 
-def test_liveness_check_fail_no_mesh(mock_face_mesh, mock_detector, mock_encoder):
+def test_liveness_blur_rejection(mock_face_mesh, mock_detector, mock_encoder):
     """
     Scenario: High quality image but FaceMesh fails
     Result: is_live=False

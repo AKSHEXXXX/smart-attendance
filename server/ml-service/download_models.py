@@ -70,7 +70,7 @@ def download_model():
         print(f"\nDownloading Face Landmarker from:")
         print(f"  {FACE_LANDMARKER_MODEL_URL}")
         try:
-            from urllib.request import urlretrieve # re-import to be safe or just use urllib.request
+            # from urllib.request import urlretrieve # Removed redundant import
             urllib.request.urlretrieve(FACE_LANDMARKER_MODEL_URL, LANDMARKER_TARGET_PATH)
             if LANDMARKER_TARGET_PATH.exists() and LANDMARKER_TARGET_PATH.stat().st_size > 0:
                 print(f"✓ Successfully downloaded landmarker to {LANDMARKER_TARGET_PATH}")
@@ -82,31 +82,6 @@ def download_model():
             return False
 
     return True
-
-
-            continue
-        except urllib.error.URLError as e:
-            print(f"✗ URL Error: {e.reason}")
-            TARGET_PATH.unlink(missing_ok=True)
-            continue
-        except Exception as e:
-            print(f"✗ Unexpected error: {e}")
-            TARGET_PATH.unlink(missing_ok=True)
-            continue
-
-    # If we get here, all URLs failed
-    print("\n" + "=" * 60)
-    print("ERROR: Failed to download model from all sources")
-    print("=" * 60)
-    print("\nPossible solutions:")
-    print("1. Check your network connection")
-    print("2. Manually download the model and place it at:")
-    print(f"   {TARGET_PATH}")
-    print("3. Download from: https://github.com/google/mediapipe")
-    print("   Look for face detection models in the modules/ directory")
-    print("\nFor Render deployment, this should work automatically.")
-    print("If you're seeing this locally, you may have network restrictions.")
-    return False
 
 
 if __name__ == "__main__":

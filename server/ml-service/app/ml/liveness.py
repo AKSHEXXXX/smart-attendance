@@ -18,11 +18,21 @@ mp_face_mesh = mp.solutions.face_mesh
 
 def is_live(face_crop: np.ndarray) -> bool:
     """
-    Returns True if face appears to be live (face mesh detected and passes relaxed quality checks).
-    Includes:
-    1. Face Mesh Validation (Structure)
-    2. Laplacian Variance (Range Check: Too Low=Flat/Blur, Too High=Screen Noise)
-    3. Color Standard Deviation (Dynamic Range Check)
+    Check if the provided face crop represents a live person.
+    
+    This function performs multiple checks to determine liveness:
+    1. **Face Mesh Validation**: Uses MediaPipe Face Mesh to ensure a valid 3D face structure exists.
+    2. **Laplacian Variance**: Analyzes image sharpness to detect:
+       - Blurriness/Flatness (Variance too low -> likely a photo/screen)
+       - Excessive Noise/Moiré patterns (Variance too high -> likely a screen capture)
+    3. **Color Standard Deviation**: Checks for sufficient color diversity to filter out low-quality spoofs or flat masks.
+
+    Args:
+        face_crop (np.ndarray): The cropped face image in BGR format (OpenCV default).
+
+    Returns:
+        bool: True if the face passes all liveness checks or if checks are disabled/fail-open.
+              False if a potential spoof is detected.
     """
     if not ML_LIVENESS_CHECK:
         return True
