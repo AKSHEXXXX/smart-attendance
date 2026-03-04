@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, date, timezone
+from datetime import datetime, date
 from typing import Dict, List, Any
 
 import socketio
