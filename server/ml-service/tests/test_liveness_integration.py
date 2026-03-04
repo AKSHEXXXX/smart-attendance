@@ -4,7 +4,6 @@ from fastapi.testclient import TestClient
 import numpy as np
 import cv2
 import base64
-import os
 
 # Import the app
 from app.main import app
