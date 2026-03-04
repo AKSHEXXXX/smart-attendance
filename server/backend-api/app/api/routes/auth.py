@@ -200,8 +200,8 @@ async def login(request: Request, payload: LoginRequest):
         raise HTTPException(status_code=401, detail="Wrong Password")
 
     # 3. Check if user is verified or not
-    #if not user.get("is_verified", False):
-       # raise HTTPException(status_code=403, detail="Please verify your email first..")
+    if not user.get("is_verified", False):
+        raise HTTPException(status_code=403, detail="Please verify your email first..")
 
     # 4. DEVICE IDENTIFICATION & GENERATION
     device_id = request.headers.get("X-Device-ID")

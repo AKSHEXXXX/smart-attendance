@@ -11,7 +11,8 @@ from ..routes.notifications import router as notifications_router
 from ..routes.reports import router as reports_router
 from ..routes.students import router as students_router
 from ..routes.health import router as health_router
-
+from ..routes.webauthn import router as webauthn_router
+from ..routes.exams import router as exams_router
 # Api routes versioning ( for v1 ) /api/v1/...
 router = APIRouter(prefix="/api/v1")
 
@@ -25,7 +26,8 @@ router.include_router(notifications_router)
 router.include_router(analytics_router)
 router.include_router(reports_router)
 router.include_router(health_router, tags=["Health"])
-
+router.include_router(webauthn_router)
+router.include_router(exams_router)
 
 # router for legacy routes -> e.g  /api/auth/login 
 legacyRouter = APIRouter(prefix="/api")
@@ -40,3 +42,5 @@ legacyRouter.include_router(notifications_router)
 legacyRouter.include_router(analytics_router)
 legacyRouter.include_router(reports_router)
 legacyRouter.include_router(health_router, tags=["Health"])
+legacyRouter.include_router(webauthn_router)
+legacyRouter.include_router(exams_router)
