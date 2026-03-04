@@ -5,7 +5,9 @@ from unittest.mock import patch, AsyncMock
 
 @pytest.fixture
 def mock_email():
-    with patch("app.core.email.BrevoEmailService._send_email", new_callable=AsyncMock) as mock:
+    with patch(
+        "app.core.email.BrevoEmailService._send_email", new_callable=AsyncMock
+    ) as mock:
         yield mock
 
 
@@ -23,7 +25,7 @@ async def test_register_user(client: AsyncClient, db, mock_email):
     }
     # with patch("app.core.email.BrevoEmailService._send_email", new_callable=AsyncMock) as mock_email:
     response = await client.post("/auth/register", json=payload)
-        
+
     assert response.status_code == 200
     data = response.json()
     assert data["email"] == payload["email"]
@@ -94,6 +96,6 @@ async def test_duplicate_registration(client: AsyncClient, db, mock_email):
     # Second registration
     response = await client.post("/auth/register", json=payload)
     if response.status_code == 422:
-         pytest.fail(f"Got 422 Validation Error: {response.json()}")
+        pytest.fail(f"Got 422 Validation Error: {response.json()}")
     assert response.status_code == 400
     assert "already registered" in response.json()["detail"].lower()
