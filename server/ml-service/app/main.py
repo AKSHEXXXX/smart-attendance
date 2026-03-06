@@ -1,6 +1,5 @@
 import os
 import time
-import logging
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -9,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
+import structlog
 
 from app.core.config import settings
 from app.api.routes.face_recognition import router as ml_router
@@ -26,9 +26,8 @@ from .middleware.timing import TimingMiddleware
 
 from .api.routes.health import router as health_router
 
-# Setup logging
-setup_logging()
-logger = logging.getLogger(settings.SERVICE_NAME)
+setup_logging(service_name=settings.SERVICE_NAME)
+logger = structlog.get_logger()
 
 if SENTRY_DSN := os.getenv("SENTRY_DSN"):
     sentry_sdk.init(
