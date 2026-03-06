@@ -210,8 +210,7 @@ async def verify_auth_response(
     logger.info(
         "webauthn.verifying_user",
         user_id=str(user["_id"]),
-        challenge=user.get("current_challenge"),
-        challenge_type=str(type(user.get("current_challenge"))),
+        has_challenge=bool(user.get("current_challenge")),
     )
 
     expected_challenge = user.get("current_challenge")
@@ -222,7 +221,7 @@ async def verify_auth_response(
         if fresh_user:
             logger.info(
                 "webauthn.found_challenge_in_fresh_fetch",
-                challenge=fresh_user.get("current_challenge"),
+                has_challenge=bool(fresh_user.get("current_challenge")),
             )
             expected_challenge = fresh_user.get("current_challenge")
             user = fresh_user  # update reference

@@ -112,7 +112,7 @@ async def authenticate_verify(
         logger.debug(
             "webauthn.verify_called",
             user_id=str(user_doc["_id"]),
-            challenge=user_doc.get("current_challenge"),
+            challenge_present=bool(user_doc.get("current_challenge")),
         )
 
         credential = parse_authentication_credential_json(body)

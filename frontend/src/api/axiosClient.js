@@ -15,7 +15,9 @@ api.interceptors.request.use((config) => {
   }
 
   // Add Correlation ID for tracing
-  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+  const existingCorrelationId =
+    config.headers["X-Correlation-ID"] ?? config.headers["x-correlation-id"];
+  if (!existingCorrelationId && typeof crypto !== "undefined" && crypto.randomUUID) {
     config.headers["X-Correlation-ID"] = crypto.randomUUID();
   }
 
