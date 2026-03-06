@@ -4,6 +4,7 @@ from pymongo import ASCENDING
 
 logger = logging.getLogger("app.db.indexes")
 
+
 async def create_indexes(db: AsyncIOMotorDatabase):
     """
     Creates necessary indexes for MongoDB collections to improve query performance.
