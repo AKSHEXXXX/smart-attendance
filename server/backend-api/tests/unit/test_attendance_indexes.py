@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import patch, AsyncMock
 from app.services.attendance import ensure_indexes
 
 @pytest.mark.asyncio
