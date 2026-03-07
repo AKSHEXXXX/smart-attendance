@@ -392,9 +392,6 @@ async def mark_attendance(request: Request, payload: Dict):
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    # Set user_id in request.state for rate limiting
-    request.state.user_id = user_id
-
     # Check device binding - ONLY for students
     # Teachers and admins are exempt from device binding
     if user_role == "student":
