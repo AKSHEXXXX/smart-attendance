@@ -279,9 +279,10 @@ export default function MarkAttendance() {
           }
         } else if (data.type === "complete") {
           frameInFlightRef.current = false;
-          setMlStatus("ready");
+          setMlStatus(data.status === "failed" ? "checking" : "ready");
         } else if (data.type === "error") {
           frameInFlightRef.current = false;
+          setMlStatus("checking");
           console.error("WS Error:", data.message);
         }
       } catch (err) {
@@ -290,6 +291,8 @@ export default function MarkAttendance() {
     };
 
     ws.onclose = () => {
+      frameInFlightRef.current = false;
+      setMlStatus("checking");
       console.log("WebSocket Disconnected");
     };
 

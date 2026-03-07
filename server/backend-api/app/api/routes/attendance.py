@@ -64,6 +64,11 @@ async def websocket_endpoint(
     try:
         # decode_jwt might raise exception if token invalid
         payload = decode_jwt(token)
+        if payload.get("type") != "access":
+            logger.warning("WebSocket authentication failed: non-access token")
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
         user_id = payload.get("user_id")
         if not user_id:
             logger.warning("WebSocket authentication failed: No user_id")
@@ -98,6 +103,8 @@ async def websocket_endpoint(
             if command == "process_frame":
                 image_b64 = data.get("image")
                 subject_id = data.get("subject_id")
+                matched_results = []
+                unmatched_results = []
 
                 if not image_b64 or not subject_id:
                     await websocket.send_json(
@@ -202,10 +209,6 @@ async def websocket_endpoint(
                             }
                         )
 
-                    # Process Each Face (Streaming)
-                    matched_results = []
-                    unmatched_results = []
-
                     for i, face in enumerate(faces):
                         match_resp = await ml_client.match_faces(
                             query_embedding=face["embedding"],
@@ -218,7 +221,7 @@ async def websocket_endpoint(
                                 match_resp.get("error", "ML match failed")
                             )
 
-                        match_data = match_resp.get("match", {})
+                        match_data = match_resp.get("match") or {}
                         best_student_id = match_data.get("student_id")
                         distance = match_data.get("distance", 1.0)
                         confidence = match_data.get("confidence", 0.0)
@@ -324,12 +327,8 @@ async def websocket_endpoint(
                         {
                             "type": "complete",
                             "status": "failed",
-                            "matched": matched_results
-                            if "matched_results" in locals()
-                            else [],
-                            "unmatched": unmatched_results
-                            if "unmatched_results" in locals()
-                            else [],
+                            "matched": matched_results,
+                            "unmatched": unmatched_results,
                         }
                     )
 
