@@ -1,20 +1,21 @@
 # backend/app/routes/settings.py
 import logging
-
-from app.db.mongo import db
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
 from datetime import datetime
 
-from app.core.cloudinary_config import cloudinary
+from app.db.mongo import db
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Request
+from bson import ObjectId, errors as bson_errors
 
+from app.core.cloudinary_config import cloudinary
 from app.utils.utils import serialize_bson
 from app.api.deps import get_current_teacher
 from app.services.subject_service import add_subject_for_teacher
 from app.db.subjects_repo import get_subjects_by_ids
 from app.services import schedule_service
-from bson import ObjectId, errors as bson_errors
 from app.schemas.schedule import Schedule
 from app.services.attendance_alerts import send_low_attendance_for_teacher
+from app.utils.file_security import file_validator
+from app.utils.rate_limiter import enforce_upload_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -180,51 +181,119 @@ async def put_settings_route(
 
 # ---------------- AVATAR UPLOAD ----------------
 
-MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
-
-
 @router.post("/upload-avatar")
 async def upload_avatar(
+    request: Request,
     file: UploadFile = File(...),
     current: dict = Depends(get_current_teacher),
 ):
-    ext = file.filename.split(".")[-1].lower()
-    if ext not in {"jpg", "jpeg", "png", "webp"}:
-        raise HTTPException(status_code=400, detail="Unsupported file type")
-
-    allowed_content_types = {"image/jpeg", "image/png", "image/webp"}
-    if file.content_type not in allowed_content_types:
-        raise HTTPException(status_code=400, detail="Invalid file content type")
-
-    contents = await file.read()
-    if len(contents) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=413, detail="File too large. Max 5MB")
-
+    """
+    Upload teacher avatar with comprehensive security validation.
+    
+    Security features:
+    - Rate limiting (5 uploads per hour per user)
+    - Magic number validation (file signature verification)
+    - Filename sanitization and path traversal prevention
+    - EXIF metadata stripping
+    - File size and dimension validation
+    - Content type verification
+    """
+    user_id = current["id"]
+    
+    # 1. Enforce rate limiting
+    await enforce_upload_rate_limit(
+        user_id=user_id,
+        operation="avatar_upload",
+        request=request
+    )
+    
+    # 2. Comprehensive file validation and security processing
+    try:
+        validation_result = await file_validator.validate_upload_file(
+            file=file,
+            max_size=5 * 1024 * 1024,  # 5MB
+            strip_metadata=True
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Avatar validation error for teacher {user_id}: {e}")
+        raise HTTPException(
+            status_code=400, 
+            detail="File validation failed. Please try with a different image."
+        )
+    
+    # 3. Log security validation results
+    logger.info(
+        f"Avatar upload validation passed for teacher {user_id}: "
+        f"filename={validation_result['filename']}, "
+        f"size={validation_result['size']}, "
+        f"mime_type={validation_result['mime_type']}, "
+        f"hash={validation_result['hash'][:16]}..."
+    )
+    
+    # 4. Upload processed image to Cloudinary with secure naming
     try:
         upload_result = cloudinary.uploader.upload(
-            contents,
-            folder="teachers/avtars",
-            public_id=str(current["id"]),
+            validation_result['content'],
+            folder="teachers/avatars",  # Fixed typo: "avtars" -> "avatars"
+            public_id=f"teacher_{user_id}_{validation_result['hash'][:8]}",
             overwrite=True,
             resource_type="image",
+            # Additional security options
+            invalidate=True,  # Invalidate CDN cache
+            quality="auto:good",  # Optimize quality
+            fetch_format="auto"  # Auto-optimize format
         )
+        
+        avatar_url = upload_result["secure_url"]
+        
+        # Log successful upload
+        logger.info(
+            f"Avatar uploaded successfully for teacher {user_id}: "
+            f"cloudinary_id={upload_result.get('public_id')}, "
+            f"url={avatar_url}"
+        )
+        
     except Exception as e:
+        logger.error(f"Cloudinary avatar upload failed for teacher {user_id}: {e}")
         raise HTTPException(
-            status_code=500, detail=f"Cloudinary upload failed: {str(e)}"
+            status_code=500, 
+            detail="Avatar upload failed. Please try again later."
         )
 
-    avatarUrl = upload_result["secure_url"]
-
-    # Update to teachers schema directly
-    teacher_id = ObjectId(current["id"])
-    result = await db.teachers.update_one(
-        {"userId": teacher_id}, {"$set": {"avatarUrl": avatarUrl}}
-    )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Teacher not found")
+    # 5. Update teacher record with audit trail
+    teacher_id = ObjectId(user_id)
+    try:
+        result = await db.teachers.update_one(
+            {"userId": teacher_id},
+            {
+                "$set": {
+                    "avatarUrl": avatar_url,
+                    "last_avatar_update": datetime.utcnow(),
+                    "avatar_image_hash": validation_result['hash']
+                }
+            },
+        )
+        
+        if result.matched_count == 0:
+            logger.warning(f"No teacher record found for user {user_id}")
+            raise HTTPException(status_code=404, detail="Teacher not found")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Database update failed for teacher {user_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to save avatar. Please try again."
+        )
 
     return {
-        "avatarUrl": avatarUrl,
+        "message": "Avatar uploaded successfully",
+        "avatarUrl": avatar_url,
+        "file_hash": validation_result['hash'][:16],  # Partial hash for verification
+        "processed_size": len(validation_result['content'])
     }
 
 

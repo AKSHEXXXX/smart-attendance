@@ -1,18 +1,22 @@
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Request
 from bson import ObjectId
 from datetime import datetime, timezone
+import base64
+import logging
+import pytz
+import os
 
 from ...db.mongo import db
 from ...core.security import get_current_user
 from app.services.students import get_student_profile
+from app.services.ml_client import ml_client
+from app.services import schedule_service
+from app.utils.file_security import file_validator
+from app.utils.rate_limiter import enforce_upload_rate_limit
 
 from cloudinary.uploader import upload
-import base64
-from app.services.ml_client import ml_client
 
-from app.services import schedule_service
-import pytz
-import os
+logger = logging.getLogger(__name__)
 # from typing import List
 
 router = APIRouter(prefix="/students", tags=["students"])
@@ -110,39 +114,69 @@ async def api_get_student_profile(student_id: str):
 # ============================
 # UPLOAD FACE IMAGE
 # ============================
-# Image validation constants
-MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 
 @router.post("/me/face-image")
 async def upload_image_url(
-    file: UploadFile = File(...), current_user: dict = Depends(get_current_user)
+    request: Request,
+    file: UploadFile = File(...), 
+    current_user: dict = Depends(get_current_user)
 ):
+    """
+    Upload and register student face image with comprehensive security validation.
+    
+    Security features:
+    - Rate limiting (20 uploads per hour per user)
+    - Magic number validation (file signature verification)
+    - Filename sanitization and path traversal prevention
+    - EXIF metadata stripping
+    - File size and dimension validation
+    - Content type verification
+    """
     if current_user.get("role") != "student":
         raise HTTPException(status_code=403, detail="Not a student")
 
-    # Validate content type
-    if file.content_type not in ["image/jpeg", "image/png", "image/jpg"]:
-        raise HTTPException(status_code=400, detail="Only JPG/PNG images are allowed")
-
-    student_user_id = ObjectId(current_user["id"])
-
-    # 1. Read image bytes
-    image_bytes = await file.read()
-
-    # 2. Validate file size (return 413 for payload too large)
-    if len(image_bytes) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=413,
-            detail=(
-                f"Image too large. Maximum size is {MAX_FILE_SIZE // 1024 // 1024}MB"
-            ),
+    user_id = current_user["id"]
+    
+    # 1. Enforce rate limiting
+    await enforce_upload_rate_limit(
+        user_id=user_id,
+        operation="face_image_upload",
+        request=request
+    )
+    
+    # 2. Comprehensive file validation and security processing
+    try:
+        validation_result = await file_validator.validate_upload_file(
+            file=file,
+            max_size=5 * 1024 * 1024,  # 5MB
+            strip_metadata=True
         )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"File validation error for user {user_id}: {e}")
+        raise HTTPException(
+            status_code=400, 
+            detail="File validation failed. Please try with a different image."
+        )
+    
+    # 3. Log security validation results
+    logger.info(
+        f"File upload validation passed for user {user_id}: "
+        f"filename={validation_result['filename']}, "
+        f"size={validation_result['size']}, "
+        f"mime_type={validation_result['mime_type']}, "
+        f"hash={validation_result['hash'][:16]}..."
+    )
+    
+    # 4. Use processed (metadata-stripped) content
+    processed_content = validation_result['content']
+    image_base64 = base64.b64encode(processed_content).decode("utf-8")
 
-    # 3. Convert to base64 for ML service
-    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+    student_user_id = ObjectId(user_id)
 
-    # 4. Generate face embeddings via ML service (includes validation)
+    # 5. Generate face embeddings via ML service (includes additional validation)
     try:
         ml_response = await ml_client.encode_face(
             image_base64=image_base64,
@@ -191,31 +225,69 @@ async def upload_image_url(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"ML service error for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail=f"ML service error: {str(e)}")
 
-    # 5. Upload image to Cloudinary
-    upload_result = upload(
-        image_bytes,
-        folder="student_faces",
-        public_id=str(current_user["id"]),
-        overwrite=True,
-        resource_type="image",
-    )
+    # 6. Upload processed image to Cloudinary with secure filename
+    try:
+        upload_result = upload(
+            processed_content,
+            folder="student_faces",
+            public_id=f"student_{user_id}_{validation_result['hash'][:8]}",
+            overwrite=True,
+            resource_type="image",
+            # Additional security options
+            invalidate=True,  # Invalidate CDN cache
+            quality="auto:good",  # Optimize quality
+            fetch_format="auto"  # Auto-optimize format
+        )
+        
+        image_url = upload_result.get("secure_url")
+        
+        # Log successful upload
+        logger.info(
+            f"Face image uploaded successfully for user {user_id}: "
+            f"cloudinary_id={upload_result.get('public_id')}, "
+            f"url={image_url}"
+        )
+        
+    except Exception as e:
+        logger.error(f"Cloudinary upload failed for user {user_id}: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail="Image upload failed. Please try again later."
+        )
 
-    image_url = upload_result.get("secure_url")
-
-    # 6. Store image_url + embeddings
-    await db.students.update_one(
-        {"userId": student_user_id},
-        {
-            "$set": {"image_url": image_url, "verified": True},
-            "$push": {"face_embeddings": embedding},
-        },
-    )
+    # 7. Store image_url + embeddings with audit trail
+    try:
+        update_result = await db.students.update_one(
+            {"userId": student_user_id},
+            {
+                "$set": {
+                    "image_url": image_url, 
+                    "verified": True,
+                    "last_face_update": datetime.now(timezone.utc),
+                    "face_image_hash": validation_result['hash']
+                },
+                "$push": {"face_embeddings": embedding},
+            },
+        )
+        
+        if update_result.modified_count == 0:
+            logger.warning(f"No student record updated for user {user_id}")
+            
+    except Exception as e:
+        logger.error(f"Database update failed for user {user_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to save face data. Please try again."
+        )
 
     return {
         "message": "Photo uploaded and face registered successfully",
         "image_url": image_url,
+        "file_hash": validation_result['hash'][:16],  # Partial hash for verification
+        "processed_size": len(processed_content)
     }
 
 
