@@ -1,4 +1,5 @@
 import os
+import asyncio
 import structlog
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
@@ -24,7 +25,7 @@ from app.services.ml_client import ml_client
 from app.services.attendance_socket_service import sio
 from app.db.nonce_store import close_redis
 from app.core.scheduler import start_scheduler, shutdown_scheduler
-from app.db.mongo import db
+from app.db.mongo import db, verify_db_connection
 from app.db.indexes import create_indexes
 
 # New Imports
@@ -85,6 +86,9 @@ def parse_session_same_site(default: str = "lax") -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
+        # Verify database connection with retry logic
+        await verify_db_connection()
+        
         await ensure_attendance_daily_indexes()
         logger.info("attendance_daily indexes ensured")
 
@@ -180,8 +184,8 @@ def create_app() -> FastAPI:
     # Routes Mounting
     # Legacy routes support Router
     app.include_router(api_legacy_router)
-    # v1 router
-    app.include_router(api_v1_router)
+    async def startup_db_client():
+        await verify_db_connection()
 
     return app
 

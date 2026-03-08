@@ -661,6 +661,51 @@ async def verify_email(token: str = Query(...)):
     return RedirectResponse(url=f"{FRONTEND_BASE_URL}/login?verified=true")
 
 
+@router.post("/resend-verification")
+async def resend_verification_email(email: str, background_tasks: BackgroundTasks):
+    """
+    Resend verification email for users who didn't receive it.
+    Useful when email fails on Render or other cloud platforms.
+    """
+    user = await db.users.find_one({"email": email})
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if user.get("is_verified", False):
+        raise HTTPException(status_code=400, detail="Email already verified")
+    
+    # Generate new token if expired or missing
+    verification_token = secrets.token_urlsafe(32)
+    verification_expiry = datetime.now(timezone.utc) + timedelta(hours=24)
+    
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {
+            "$set": {
+                "verification_token": verification_token,
+                "verification_expiry": verification_expiry,
+            }
+        },
+    )
+    
+    verify_link = f"{BACKEND_BASE_URL}/auth/verify-email?token={verification_token}"
+    
+    try:
+        background_tasks.add_task(
+            send_verification_email,
+            to_email=email,
+            verification_link=verify_link,
+        )
+        return {"message": "Verification email resent successfully. Please check your inbox."}
+    except Exception as e:
+        print(f"Failed to resend verification email: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to send verification email. Please try again later."
+        )
+
+
 oauth.register(
     name="google",
     client_id=os.getenv("GOOGLE_CLIENT_ID"),

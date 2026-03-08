@@ -2,6 +2,14 @@
 
 Main backend API service for the Smart Attendance System. Handles all business logic, authentication, database operations, and orchestrates ML service calls.
 
+## ⚠️ Important: Email Configuration
+
+**Email verification not working on Render/Production?** See [EMAIL_SETUP.md](./EMAIL_SETUP.md) for detailed configuration guide including:
+- Gmail App Password setup
+- Alternative services (SendGrid, Resend)
+- Troubleshooting deployment issues
+- Test script to verify email works
+
 ## Features
 
 - **User Authentication**: JWT-based authentication and authorization
@@ -10,7 +18,7 @@ Main backend API service for the Smart Attendance System. Handles all business l
 - **Subject/Class Management**: Manage subjects and enrolled students
 - **Schedule Management**: Weekly timetable, recurring schedules, holidays
 - **Teacher Settings**: Manage teacher preferences
-- **Email Notifications**: Automated email notifications
+- **Email Notifications**: Automated email notifications with verification
 - **Image Upload**: Cloudinary integration for face images
 - **ML Orchestration**: Coordinates with ML service for face recognition
 
@@ -20,7 +28,7 @@ Main backend API service for the Smart Attendance System. Handles all business l
 - **Database**: MongoDB (Motor async driver)
 - **Authentication**: JWT, OAuth
 - **Image Storage**: Cloudinary
-- **Email**: SMTP
+- **Email**: SMTP (with background tasks)
 - **HTTP Client**: httpx (for ML service)
 
 ## Architecture
@@ -35,12 +43,15 @@ Frontend → Backend API → ML Service
 
 ## API Endpoints
 
-### Authentication (`/api/auth`)
-
+### Authentication (`/auth`)
 - `POST /login` - User login
-- `POST /register` - User registration
+- `POST /register` - User registration with email verification
+- `POST /resend-verification` - Resend verification email
+- `GET /verify-email` - Verify email with token
 - `POST /logout` - User logout
 - `GET /me` - Get current user
+- `GET /google` - Google OAuth login
+- `GET /google/callback` - Google OAuth callback
 
 ### Students (`/api/students`)
 
