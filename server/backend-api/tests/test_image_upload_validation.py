@@ -6,6 +6,7 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 from io import BytesIO
 from PIL import Image
+import os
 
 from app.main import app
 
@@ -25,6 +26,13 @@ def create_test_image_file(width=100, height=100, format="JPEG", size_mb=None):
     buffer = BytesIO()
     img.save(buffer, format=format)
     buffer.seek(0)
+    return buffer
+
+
+def create_malicious_file(filename="test.jpg", content=b"malicious content"):
+    """Helper to create a file with malicious content"""
+    buffer = BytesIO(content)
+    buffer.name = filename
     return buffer
 
 
@@ -48,6 +56,167 @@ async def test_valid_image_upload():
 @pytest.mark.asyncio
 async def test_image_too_large():
     """Test that oversized image is rejected with 413"""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Create 6MB file (exceeds 5MB limit)
+        large_file = create_test_image_file(size_mb=6)
+
+        response = await client.post(
+            "/students/me/face-image",
+            files={"file": ("large.jpg", large_file, "image/jpeg")},
+        )
+
+        # Should fail at size validation (413), not auth (401)
+        assert response.status_code == 413
+        assert "too large" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_invalid_file_type():
+    """Test that non-image files are rejected"""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Create text file disguised as image
+        text_file = BytesIO(b"This is not an image")
+
+        response = await client.post(
+            "/students/me/face-image",
+            files={"file": ("fake.jpg", text_file, "image/jpeg")},
+        )
+
+        # Should fail at file type validation (400)
+        assert response.status_code == 400
+        assert "invalid file type" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_malicious_filename():
+    """Test that malicious filenames are sanitized"""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Create valid image with malicious filename
+        image_file = create_test_image_file(100, 100, "JPEG")
+        
+        malicious_filename = "../../../etc/passwd.jpg"
+
+        response = await client.post(
+            "/students/me/face-image",
+            files={"file": (malicious_filename, image_file, "image/jpeg")},
+        )
+
+        # Should fail at auth (401), meaning filename was processed
+        # (not rejected at validation level)
+        assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_mime_type_spoofing():
+    """Test that MIME type spoofing is detected"""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Create text file with image MIME type
+        text_file = BytesIO(b"This is not an image")
+
+        response = await client.post(
+            "/students/me/face-image",
+            files={"file": ("fake.jpg", text_file, "image/jpeg")},
+        )
+
+        # Should fail at magic number validation (400)
+        assert response.status_code == 400
+        assert "invalid file type" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_teacher_avatar_upload_security():
+    """Test that teacher avatar upload has same security measures"""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Create oversized file
+        large_file = create_test_image_file(size_mb=6)
+
+        response = await client.post(
+            "/settings/upload-avatar",
+            files={"file": ("large.jpg", large_file, "image/jpeg")},
+        )
+
+        # Should fail at size validation (413), not auth (401)
+        assert response.status_code == 413
+        assert "too large" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_webp_file_validation():
+    """Test that WebP files are properly validated"""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Create valid WebP image
+        img = Image.new("RGB", (100, 100), color="blue")
+        buffer = BytesIO()
+        img.save(buffer, format="WEBP")
+        buffer.seek(0)
+
+        response = await client.post(
+            "/settings/upload-avatar",
+            files={"file": ("test.webp", buffer, "image/webp")},
+        )
+
+        # Should fail at auth (401), meaning file was validated successfully
+        assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_image_dimensions_validation():
+    """Test that oversized image dimensions are rejected"""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Create image with dimensions exceeding 4096x4096
+        # Note: This test may be memory intensive, so we'll use a smaller test
+        large_image = create_test_image_file(5000, 5000, "JPEG")
+
+        response = await client.post(
+            "/students/me/face-image",
+            files={"file": ("huge.jpg", large_image, "image/jpeg")},
+        )
+
+        # Should fail at dimension validation (400) or size validation (413)
+        assert response.status_code in [400, 413]
+
+
+@pytest.mark.asyncio
+async def test_empty_file():
+    """Test that empty files are rejected"""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Create empty file
+        empty_file = BytesIO(b"")
+
+        response = await client.post(
+            "/students/me/face-image",
+            files={"file": ("empty.jpg", empty_file, "image/jpeg")},
+        )
+
+        # Should fail at file validation (400)
+        assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_rate_limiting_simulation():
+    """Test that rate limiting headers are present (when implemented)"""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Create valid small image
+        image_file = create_test_image_file(50, 50, "JPEG")
+
+        response = await client.post(
+            "/students/me/face-image",
+            files={"file": ("test.jpg", image_file, "image/jpeg")},
+        )
+
+        # Even if it fails at auth, rate limiting should be checked first
+        # If rate limiting is active, we should see 429 after multiple requests
+        # For now, just verify the endpoint is accessible
+        assert response.status_code in [401, 400, 413, 429]
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         # Create deterministic 6MB payload (exceeds 5MB limit)

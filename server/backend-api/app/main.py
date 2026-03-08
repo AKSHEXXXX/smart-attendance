@@ -39,6 +39,9 @@ from .middleware.correlation import CorrelationIdMiddleware
 from .middleware.timing import TimingMiddleware
 from .middleware.security import SecurityHeadersMiddleware
 
+# Security imports
+from app.core.security_config import security_config, log_security_event
+
 from slowapi.errors import RateLimitExceeded
 from app.core.limiter import limiter, rate_limit_exceeded_handler
 
